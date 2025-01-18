@@ -1,0 +1,11 @@
+{
+   "users": [
+      {
+         "id": "30f6b238-23cf-4802-a5d3-76b167d0b7ad",
+         "name": "Luis Arna",
+         "email": "arna@example.com",
+         "age": 30
+      }
+   ],
+   "preferences": []
+}
