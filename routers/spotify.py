@@ -6,7 +6,23 @@ import os
 from utils import get_access_token
 from dotenv import load_dotenv
 
-load_dotenv()
+#Almacenamiento de tokens
+import json
+
+# Guardar el token en un archivo
+def save_tokens_to_file(tokens):
+    with open("tokens.json", "w") as file:
+        json.dump(tokens, file)
+
+# Cargar el token desde un archivo
+def load_tokens_from_file():
+    try:
+        with open("tokens.json", "r") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return None
+
+load_dotenv("../config.env")
 
 router = APIRouter()
 CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
@@ -54,8 +70,8 @@ def callback(code: str):
         raise HTTPException(status_code=400, detail="Error al obtener el token")
 
     token_data = response.json()
-    user_tokens["access_token"] = token_data["access_token"]
-    user_tokens["refresh_token"] = token_data["refresh_token"]
+    save_tokens_to_file(token_data)
+
     return {"message": "Autenticación exitosa", "tokens": token_data}
 
 
@@ -65,25 +81,23 @@ def get_top_items(
     time_range: str = Query("short_term", regex="^(short_term|medium_term|long_term)$"),
     limit: int = Query(10, ge=1, le=50),
 ):
+    tokens = load_tokens_from_file()
     """
     Devuelve los artistas o pistas principales del usuario.
     """
-    token = get_access_token()
-    if not token:
+    access_token = tokens.get("access_token")
+    if not access_token:
         raise HTTPException(status_code=401, detail="Usuario no autenticado")
 
-    # Preparar la URL y los parámetros
     url = SPOTIFY_TOP_ITEMS_URL.format(type=item_type)
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {access_token}"}
     params = {"time_range": time_range, "limit": limit}
 
-    # Realizar la solicitud a Spotify
     response = requests.get(url, headers=headers, params=params)
-    
+
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail=response.json())
 
-    # Retornar la respuesta JSON de Spotify
     return response.json()
 
 @router.get("/tracks")
