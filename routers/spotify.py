@@ -1,25 +1,19 @@
-from fastapi import APIRouter, HTTPException, Query, Request
-from models import SpotifyTrack
+from fastapi import APIRouter, HTTPException, Request
 import requests
 import os
 from fastapi.responses import JSONResponse
-from utils import save_tokens_to_file, load_tokens_from_file
 from dotenv import load_dotenv
 #Almacenamiento de tokens
 import secrets
-import json
-import urllib.parse
-import base64
 import httpx
 from fastapi.responses import RedirectResponse, JSONResponse
 from urllib.parse import urlencode
-from utils import generate_random_string
 
 load_dotenv()
 
 router = APIRouter()
-CLIENT_ID = '093bc63f183e47c9b3d885367950c1e0'
-CLIENT_SECRET = '0b5e15820c974e4ab962f50005dd8e93'
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 SCOPES = "user-top-read"
 REDIRECT_URI = "http://localhost:8000/auth/callback"
 SPOTIFY_SEARCH_URL = "https://api.spotify.com/v1/search"
