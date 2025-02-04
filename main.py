@@ -10,4 +10,4 @@ app = FastAPI(
 # Registrar los routers
 app.include_router(users.router, prefix="/users", tags=["Users"])
 app.include_router(preferences.router, prefix="/preferences", tags=["Preferences"])
-app.include_router(spotify.router, prefix="/spotify", tags=["Spotify"])
+app.include_router(spotify.router, prefix="/auth", tags=["Spotify"])

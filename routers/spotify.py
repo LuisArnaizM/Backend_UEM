@@ -1,102 +1,198 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from models import SpotifyTrack
-from fastapi.responses import RedirectResponse
 import requests
 import os
-from utils import get_access_token
+from fastapi.responses import JSONResponse
+from utils import save_tokens_to_file, load_tokens_from_file
 from dotenv import load_dotenv
-
 #Almacenamiento de tokens
+import secrets
 import json
+import urllib.parse
+import base64
+import httpx
+from fastapi.responses import RedirectResponse, JSONResponse
+from urllib.parse import urlencode
+from utils import generate_random_string
 
-# Guardar el token en un archivo
-def save_tokens_to_file(tokens):
-    with open("tokens.json", "w") as file:
-        json.dump(tokens, file)
-
-# Cargar el token desde un archivo
-def load_tokens_from_file():
-    try:
-        with open("tokens.json", "r") as file:
-            return json.load(file)
-    except FileNotFoundError:
-        return None
-
-load_dotenv("../config.env")
+load_dotenv()
 
 router = APIRouter()
-CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
-CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
-REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI")
-
+CLIENT_ID = '093bc63f183e47c9b3d885367950c1e0'
+CLIENT_SECRET = '0b5e15820c974e4ab962f50005dd8e93'
+SCOPES = "user-top-read"
+REDIRECT_URI = "http://localhost:8000/auth/callback"
 SPOTIFY_SEARCH_URL = "https://api.spotify.com/v1/search"
 SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
-SPOTIFY_TOP_ITEMS_URL = "https://api.spotify.com/v1/me/top/{type}"
+SPOTIFY_TOP_ARTISTS_URL = "https://api.spotify.com/v1/me/top/artists"
+SPOTIFY_TOP_TRACKS_URL = "https://api.spotify.com/v1/me/top/tracks"
+SPOTIFY_API_URL = "https://api.spotify.com/v1"
 
-user_tokens = {}
+states = {}
+tokens = {}
 
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import RedirectResponse
+from urllib.parse import urlencode
+import httpx
 
-@router.get("/")
-def home():
-    """
-    Redirige al usuario a la página de autenticación de Spotify.
-    """
-    scope = "user-top-read"
-    auth_url = (
-        f"{SPOTIFY_AUTH_URL}?"
-        f"client_id={CLIENT_ID}&response_type=code&redirect_uri={REDIRECT_URI}&scope={scope}"
-    )
+router = APIRouter()
+
+# Almacenaje temporal de tokens
+tokens = {}
+
+# Ruta de login que redirige al usuario a Spotify
+@router.get("/login")
+async def login():
+    # Generar un estado aleatorio para proteger la solicitud
+    state = secrets.token_urlsafe(16)
+    tokens["state"] = state
+    scope = "user-top-read user-read-private user-read-email"
+
+    params = {
+        "response_type": "code",
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "scope": scope,
+        "state": state
+    }
+
+    auth_url = f"{SPOTIFY_AUTH_URL}?{urlencode(params)}"
     return RedirectResponse(auth_url)
 
-
+# Ruta callback para obtener el token
 @router.get("/callback")
-def callback(code: str):
-    if not code:
-        raise HTTPException(status_code=400, detail="Código de autorización no proporcionado")
-    """
-    Maneja el flujo de autorización de Spotify y obtiene un token.
-    """
+async def callback(request: Request):
+    """Recibe el código de autorización y solicita los tokens"""
+
+    # Obtener el código y estado de la URL
+    code = request.query_params.get('code')
+    state = request.query_params.get('state')
+
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="Faltan los parámetros 'code' o 'state'")
+
+    # Verificar que el estado sea el esperado
+    if state != tokens.get("state"):
+        raise HTTPException(status_code=400, detail="Estado inválido")
+
+    # Eliminar el estado después de validarlo
+    del tokens["state"]
+
+    # Intercambiar el código de autorización por los tokens
     data = {
         "grant_type": "authorization_code",
         "code": code,
         "redirect_uri": REDIRECT_URI,
         "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
+        "client_secret": CLIENT_SECRET
     }
 
-    response = requests.post(SPOTIFY_TOKEN_URL, data=data)
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(SPOTIFY_TOKEN_URL, data=data, headers=headers)
+
     if response.status_code != 200:
-        raise HTTPException(status_code=400, detail="Error al obtener el token")
+        raise HTTPException(status_code=response.status_code, detail="Error obteniendo token")
 
-    token_data = response.json()
-    save_tokens_to_file(token_data)
+    # Guardar los tokens en un diccionario global (en producción usar algo más seguro como base de datos)
+    tokens["access_token"] = response.json().get("access_token")
+    tokens["refresh_token"] = response.json().get("refresh_token")
 
-    return {"message": "Autenticación exitosa", "tokens": token_data}
+    # Devuelve el access_token directamente para ser usado en futuras peticiones
+    return {"access_token": tokens["access_token"], "refresh_token": tokens["refresh_token"]}
 
+# Ruta para obtener los artistas más escuchados usando el access_token
+@router.get("/top-artists")
+async def top_artists():
+    """Obtiene los artistas más escuchados usando el access token"""
 
-@router.get("/top-items/{item_type}")
-def get_top_items(
-    item_type: str,
-    time_range: str = Query("short_term", regex="^(short_term|medium_term|long_term)$"),
-    limit: int = Query(10, ge=1, le=50),
-):
-    tokens = load_tokens_from_file()
-    """
-    Devuelve los artistas o pistas principales del usuario.
-    """
     access_token = tokens.get("access_token")
     if not access_token:
-        raise HTTPException(status_code=401, detail="Usuario no autenticado")
+        raise HTTPException(status_code=401, detail="No se ha obtenido un token de acceso")
 
-    url = SPOTIFY_TOP_ITEMS_URL.format(type=item_type)
-    headers = {"Authorization": f"Bearer {access_token}"}
-    params = {"time_range": time_range, "limit": limit}
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
 
-    response = requests.get(url, headers=headers, params=params)
+    async with httpx.AsyncClient() as client:
+        response = await client.get(SPOTIFY_TOP_ARTISTS_URL, headers=headers)
 
     if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail=response.json())
+        raise HTTPException(status_code=response.status_code, detail="Error obteniendo artistas")
+
+    top_artists = response.json().get("items", [])
+
+    # Mostrar los artistas
+    return {"top_artists": top_artists}
+# Ruta para obtener los artistas más escuchados usando el access_token
+@router.get("/top-tracks")
+async def top_artists():
+    """Obtiene los artistas más escuchados usando el access token"""
+
+    access_token = tokens.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=401, detail="No se ha obtenido un token de acceso")
+
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(SPOTIFY_TOP_TRACKS_URL, headers=headers)
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Error obteniendo artistas")
+
+    top_tracks = response.json().get("items", [])
+
+    # Mostrar los artistas
+    return {"top_tracks": top_tracks}
+
+# Ruta para refrescar el access token usando el refresh_token
+@router.get("/refresh-token")
+async def refresh_token():
+    """Renueva el access token usando el refresh token"""
+
+    refresh_token = tokens.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="No se ha encontrado un refresh token")
+
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(SPOTIFY_TOKEN_URL, data=data, headers=headers)
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Error renovando el token")
+
+    # Actualizar el access token
+    tokens["access_token"] = response.json().get("access_token")
+
+    return {"access_token": tokens["access_token"]}
+
+@router.get("/token")
+async def get_spotify_token():
+    data = {
+        "grant_type": "client_credentials",
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(SPOTIFY_TOKEN_URL, data=data, headers=headers)
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Error obteniendo token")
 
     return response.json()
 
@@ -105,7 +201,7 @@ def search_track(query: str):
     """
     Busca una pista por su nombre.
     """
-    access_token = user_tokens.get("access_token")
+    access_token = tokens.get("access_token")
     if not access_token:
         raise HTTPException(status_code=401, detail="Usuario no autenticado")
 
@@ -114,7 +210,7 @@ def search_track(query: str):
     response = requests.get(SPOTIFY_SEARCH_URL, headers=headers, params=params)
     if response.status_code != 200:
         raise HTTPException(status_code=500, detail="Error al buscar la pista")
-    
+
     data = response.json()
     if not data['tracks']['items']:
         raise HTTPException(status_code=404, detail="Pista no encontrada")
