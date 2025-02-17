@@ -15,7 +15,7 @@ router = APIRouter()
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 SCOPES = "user-top-read"
-REDIRECT_URI = "http://localhost:8000/auth/callback"
+REDIRECT_URI = "http://localhost:8000/spotify/callback"
 SPOTIFY_SEARCH_URL = "https://api.spotify.com/v1/search"
 SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -26,7 +26,7 @@ SPOTIFY_API_URL = "https://api.spotify.com/v1"
 states = {}
 tokens = {}
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from urllib.parse import urlencode
 import httpx
