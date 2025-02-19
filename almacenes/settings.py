@@ -83,15 +83,21 @@ WSGI_APPLICATION = "almacenes.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
+import os
+from dotenv import load_dotenv
 
+# Cargar las variables de entorno desde el .env
+load_dotenv()
+
+# Configuración de la base de datos
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'almacen_db',
-        'USER': 'root',
-        'PASSWORD': 'Admin95!',
-        'HOST': 'localhost',
-        'PORT': '3306',
+        'ENGINE': 'django.db.backends.mysql',  
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('DB_USER'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': os.getenv('DB_PORT'),
     }
 }
 

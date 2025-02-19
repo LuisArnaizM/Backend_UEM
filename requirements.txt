@@ -2,3 +2,5 @@ Django
 djangorestframework
 pymysql
 djangorestframework-simplejwt
+python-dotenv
+cryptography

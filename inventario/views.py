@@ -57,7 +57,7 @@ class MovimientoProductoAPIView(APIView):
 
             # Actualizar las existencias del producto
             if movimiento.tipo == 'entrada':
-                producto.precio += movimiento.cantidad  # Ejemplo de lógica de actualización
+                producto.precio += movimiento.cantidad 
             elif movimiento.tipo == 'salida':
                 if producto.precio - movimiento.cantidad >= 0:  # Evitar inventario negativo
                     producto.precio -= movimiento.cantidad
